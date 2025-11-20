@@ -17,7 +17,7 @@ Gemini의 공유 링크를 입력하면 **기능(수정, 크기조절, 저장)�
 
 # 2. URL 입력 받기
 default_url = "https://gemini.google.com/share/xxxxx"
-url = st.text_input("Gemini 공유 링크 입력:", value=default_url)
+url = st.text_input("Gemini 공유 링크 입력:")
 
 # 3. Selenium을 이용한 크롤링 함수 (버전 충돌 해결 버전)
 def get_ai_text_content(target_url):
@@ -203,3 +203,4 @@ if st.button("HTML 파일 생성하기 🚀"):
                 file_name="gemini_smart_doc.html",
                 mime="text/html"
             )
+
