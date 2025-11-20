@@ -5,43 +5,55 @@ from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 import time
+import os
 
 # 1. 페이지 기본 설정
 st.set_page_config(page_title="Gemini HTML Generator", layout="wide")
 
 st.title("Gemini 채팅링크 html 변환기 🛠️")
+st.markdown("""
+Gemini의 공유 링크를 입력하면 **기능(수정, 크기조절, 저장)이 내장된 HTML 파일**로 변환해줍니다.
+""")
 
 # 2. URL 입력 받기
 default_url = "https://gemini.google.com/share/xxxxx"
-url = st.text_input("Gemini 공유 링크 입력:")
+url = st.text_input("Gemini 공유 링크 입력:", value=default_url)
 
-# 3. Selenium을 이용한 크롤링 함수
+# 3. Selenium을 이용한 크롤링 함수 (클라우드/로컬 호환)
 def get_ai_text_content(target_url):
     chrome_options = Options()
-    chrome_options.add_argument("--headless") # 브라우저 창 띄우지 않음
+    chrome_options.add_argument("--headless") 
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
     
-    # 드라이버 자동 설치 및 설정
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-    
+    # [핵심] Streamlit Cloud (Linux) 환경 대응
+    # 리눅스 환경에서는 크롬 바이너리 위치를 명시해줘야 안정적으로 동작합니다.
+    if os.path.exists("/usr/bin/chromium"):
+        chrome_options.binary_location = "/usr/bin/chromium"
+    elif os.path.exists("/usr/bin/chromium-browser"):
+        chrome_options.binary_location = "/usr/bin/chromium-browser"
+
     try:
-        with st.spinner('AI 답변을 분석하고 텍스트를 추출 중입니다...'):
+        # 드라이버 설치 및 실행
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        
+        with st.spinner('AI 답변을 분석하고 텍스트를 추출 중입니다... (약 5~10초 소요)'):
             driver.get(target_url)
-            time.sleep(5) # 페이지 로딩 대기 (네트워크 환경에 따라 조절 가능)
+            time.sleep(6) # 페이지 로딩 대기 (넉넉하게 설정)
             
             page_source = driver.page_source
             soup = BeautifulSoup(page_source, "html.parser")
             
-            # 불필요한 요소 제거
+            # 불필요한 요소 제거 (이미지, 스크립트 등)
             for tag in soup.find_all(['img', 'svg', 'video', 'figure', 'picture']):
                 tag.decompose()
 
             for script in soup(["script", "style", "noscript", "iframe"]):
                 script.extract()
 
-            # Gemini 답변 본문 추출 (markdown 클래스 또는 일반 텍스트 태그)
+            # Gemini 답변 본문 추출
             content_blocks = soup.find_all(class_="markdown")
             if not content_blocks:
                 content_blocks = soup.find_all(['p', 'pre', 'code', 'ul', 'ol', 'h3', 'h4'])
@@ -49,11 +61,9 @@ def get_ai_text_content(target_url):
             # 내용 조립
             body_content = ""
             for block in content_blocks:
-                # 내용이 너무 짧은 빈 태그 제외
                 if len(block.get_text(strip=True)) < 2:
                     continue
                 
-                # 태그 속성(class 등) 초기화하여 깔끔하게 만듦
                 if hasattr(block, 'attrs'):
                     block.attrs = {} 
                 
@@ -67,9 +77,11 @@ def get_ai_text_content(target_url):
     except Exception as e:
         return None, str(e)
     finally:
-        driver.quit()
+        # 드라이버 종료 (에러가 나더라도 실행)
+        if 'driver' in locals():
+            driver.quit()
 
-# 4. 스마트 HTML 생성 함수 (툴바 고정 해제 적용됨)
+# 4. 스마트 HTML 생성 함수
 def create_smart_html(content):
     """
     수정, 크기 조절, 폭 조절, 파일명 지정 저장이 가능한 HTML 템플릿 생성
@@ -98,9 +110,9 @@ def create_smart_html(content):
             overflow-x: hidden; 
         }}
 
-        /* 상단 툴바 스타일 수정됨 */
+        /* 상단 툴바: position relative로 설정하여 스크롤 시 위로 사라짐 */
         #toolbar {{
-            position: relative; /* sticky -> relative 변경: 스크롤 시 사라짐 */
+            position: relative; 
             top: 0;
             left: 0;
             width: 100%;
@@ -290,13 +302,14 @@ def create_smart_html(content):
 
 # 5. 메인 실행 로직
 if st.button("HTML 파일 생성하기 🚀"):
-    if not url:
-        st.warning("URL을 입력해주세요.")
+    if not url or "gemini.google.com" not in url:
+        st.warning("올바른 Gemini 공유 링크를 입력해주세요.")
     else:
         extracted_text, error = get_ai_text_content(url)
         
         if error:
             st.error(f"오류 발생: {error}")
+            st.info("Streamlit Cloud라면 packages.txt 파일이 있는지 확인해보세요.")
         else:
             final_html = create_smart_html(extracted_text)
             
